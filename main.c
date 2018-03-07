@@ -47,7 +47,7 @@ void GetInput()
     mat_row_nnz[i] = rand() % (mat_col_num+1);
   }
   for(int i = 0; i < vec_full_length; ++i){
-    if(rand() % 2 == 0){
+    if(rand()%2 == 0){
       task.push_back(mat_row_nnz[rand()%mat_row_num]);
     }
   }
@@ -55,12 +55,21 @@ void GetInput()
 
 void Distribute()
 {
-
+  int task_num = task.size();
+  for(int i = 0; i < task_num; ++i){
+    for(int j = 0; j < PE_num; ++j){
+      for(int k = 0; k < PE_scale[j]; ++k){
+        PE_list[j].addTask(task[i]);
+      }
+    }
+  }
 }
 
 void Calculate()
 {
-
+  while(++clock){
+    
+  }
 }
 
 int main()
