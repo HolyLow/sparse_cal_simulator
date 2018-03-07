@@ -13,7 +13,7 @@ int PE_num = 4;
 int* PE_scale;
 int multiplier_num = 200;
 
-int clock = 0;
+int clk = 0;
 vector<int> task;
 int* mat_row_nnz;
 PE* PE_list;
@@ -35,7 +35,7 @@ void Init()
     PE_list[i].init(i, PE_num, multiplier_num * ((float)PE_scale[i]/scale_all));
   }
 
-  clock = 0;
+  clk = 0;
   task.clear();
   mat_row_nnz = new int[mat_row_num];
 }
@@ -67,8 +67,17 @@ void Distribute()
 
 void Calculate()
 {
-  while(++clock){
-    
+  while(++clk){
+    for(int i = 0; i < PE_num; ++i){
+      PE_list[i].calculate();
+    }
+    for(int i = 0; i < PE_num; ++i){
+      PE_list[i].steal(PE_list);
+    }
+    int cnt = 0;
+    for(; cnt < PE_num && PE_list[cnt].finished(); ++cnt);
+    if(cnt == PE_num)
+      break;
   }
 }
 
@@ -78,5 +87,6 @@ int main()
   GetInput();
   Distribute();
   Calculate();
+  printf("clock = %d\n", clk);
   return 0;
 }

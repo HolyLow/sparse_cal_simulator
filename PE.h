@@ -6,14 +6,21 @@ using namespace std;
 
 class PE{
 public:
-  PE(){ task.clear(); neighbor.clear(); }
-  void Init(int id, int all, int );
+  PE();
+  void init(int iid, int all, int mul);
+  void addTask(int t);
+  void calculate();
+  void steal(PE* head);
+  int stolen();
+  bool finished();
 
 private:
   int id;
   int mul_num;
   int halt_cnt;
   vector<int> task;
+  int current_task;
+  int task_sum;
   vector<int> neighbor;
 };
 
