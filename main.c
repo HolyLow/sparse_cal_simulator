@@ -13,6 +13,8 @@ int vec_row_num = 64;
 int mat_row_num = vec_full_length;
 int mat_col_num = 64;
 int PE_num = 3;
+float vec_sparsity = 0.5;
+float mat_sparsity = 0.9;
 
 int* PE_scale;
 int multiplier_num = 12;
@@ -95,18 +97,25 @@ void SparsityMatrixGenerate(int*& row_nnz, int row, int col, float sparsity)
   // printf("range = %d, cnt = %d\n", range, cnt);
 }
 
-// void GetInput()
-// {
-//   srand((unsigned)time(0));
-//   for(int i = 0; i < mat_row_num; ++i){
-//     mat_row_nnz[i] = rand() % (mat_col_num+1);
-//   }
-//   for(int i = 0; i < vec_full_length; ++i){
-//     if(rand()%2 == 0){
-//       task.push_back(mat_row_nnz[rand()%mat_row_num]);
-//     }
-//   }
-// }
+void GetInput()
+{
+  int nnz = 0;
+  scanf("%d%d", &vec_row_num, &vec_full_length);
+  vec_row_nnz = new int[vec_row_num];
+  for(int i = 0; i < vec_row_num; ++i){
+    scanf("%d", &vec_row_nnz[i]);
+    nnz += vec_row_nnz[i];
+  }
+  vec_sparsity = 1 - nnz / (float)(vec_row_num*vec_full_length);
+  nnz = 0;
+  scanf("%d%d", &mat_row_num, &mat_col_num);
+  vec_row_nnz = new int[mat_row_num];
+  for(int i = 0; i < mat_row_num; ++i){
+    scanf("%d", &mat_row_nnz[i]);
+    nnz += mat_row_nnz[i];
+  }
+  mat_sparsity = 1 - nnz / (float)(mat_row_num*mat_col_num);
+}
 
 void GenerateInput(float A_sparsity, float B_sparsity)
 {
@@ -246,17 +255,24 @@ void Run()
 int main()
 {
   InitSettings();
-  for(float a = 0.4; a < 0.71; a += 0.1){
-    for(float b = 0.6; b < 0.91; b += 0.1){
-      GenerateInput(a, b);
-      PE::steal_policy = POLICY_NO_STEAL;
-      printf("\nA_sparsity = %f, B_sparsity = %f, doSteal = false\n", a, b);
-      Run();
-      PE::steal_policy = POLICY_DO_STEAL;
-      printf("\nA_sparsity = %f, B_sparsity = %f, doSteal = true\n", a, b);
-      Run();
-    }
-  }
+  GetInput();
+  PE::steal_policy = POLICY_NO_STEAL;
+  printf("\nA_sparsity = %f, B_sparsity = %f, doSteal = false\n", vec_sparsity, mat_sparsity);
+  Run();
+  PE::steal_policy = POLICY_DO_STEAL;
+  printf("\nA_sparsity = %f, B_sparsity = %f, doSteal = true\n", vec_sparsity, mat_sparsity);
+  Run();
+  // for(float a = 0.4; a < 0.71; a += 0.1){
+  //   for(float b = 0.6; b < 0.91; b += 0.1){
+  //     GenerateInput(a, b);
+  //     PE::steal_policy = POLICY_NO_STEAL;
+  //     printf("\nA_sparsity = %f, B_sparsity = %f, doSteal = false\n", a, b);
+  //     Run();
+  //     PE::steal_policy = POLICY_DO_STEAL;
+  //     printf("\nA_sparsity = %f, B_sparsity = %f, doSteal = true\n", a, b);
+  //     Run();
+  //   }
+  // }
 
   CleanUp();
   return 0;
