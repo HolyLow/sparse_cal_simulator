@@ -28,11 +28,13 @@ public:
   bool finished();
   void report();
   static void static_init(PE* h, int pe_num);
+  static int overall_task();
   static int steal_policy;
   static int sync_policy;
 
 
 private:
+  int clk;
   int id;
   int mul_num;
   int halt_cnt;
@@ -40,12 +42,15 @@ private:
   vector<int> task;
   int current_task;
   int task_sum;
+  int task_overall;
+  int task_cnt;
   vector<int> neighbor;
   bool sync_waiting;
   int steal_cnt;
   static PE* head;
   static int PE_num;
   static int waiting_cnt;
+  static int PE_task_overall;
 
   static void error(string msg);
 };

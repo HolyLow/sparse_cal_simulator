@@ -5,7 +5,7 @@ int PE::sync_policy = SYNC_POLICY_LINE;
 int PE::waiting_cnt = 0;
 int PE::PE_num = 0;
 PE* PE::head = NULL;
-
+int PE::PE_task_overall = 0;
 PE::PE(){
   task.clear();
   neighbor.clear();
@@ -15,6 +15,9 @@ PE::PE(){
   idel_cnt = 0;
   sync_waiting = false;
   steal_cnt = 0;
+  task_overall = 0;
+  task_cnt = 0;
+  clk = 0;
 }
 
 void PE::init(int iid, int mul, int con_policy){
@@ -43,14 +46,21 @@ void PE::cleanup(){
   idel_cnt = 0;
   sync_waiting = false;
   steal_cnt = 0;
+  task_overall = 0;
+  task_cnt = 0;
+  clk = 0;
 }
 
 void PE::addTask(int t){
   task.push_back(t);
   task_sum += t;
+  task_overall += t;
+  task_cnt++;
+  PE_task_overall += t;
 }
 
 void PE::calculate(){
+  clk++;
   if(halt_cnt > 0){
     --halt_cnt;
     ++idel_cnt;
@@ -64,6 +74,16 @@ void PE::calculate(){
   }
   if(task_sum == 0){
     ++idel_cnt;
+    if(sync_policy == SYNC_POLICY_ELEMENT && sync_waiting == false){
+      ++waiting_cnt;
+      sync_waiting = true;
+      // printf("PE id = %d, begin waiting, waiting id = %d\n", id, waiting_cnt);
+      if(waiting_cnt == PE_num){
+        // printf("wake all up\n");
+        for(int i = 0; i < PE_num; ++i)
+          head[i].wakeup();
+      }
+  }
     return;
   }
   int mul_left = mul_num;
@@ -77,10 +97,13 @@ void PE::calculate(){
       if(sync_policy == SYNC_POLICY_ELEMENT){
         ++waiting_cnt;
         sync_waiting = true;
+        // printf("PE id = %d, begin waiting, waiting id = %d\n", id, waiting_cnt);
         if(waiting_cnt == PE_num){
+          // printf("wake all up\n");
           for(int i = 0; i < PE_num; ++i)
             head[i].wakeup();
         }
+        break;
       }
     }
     else{
@@ -89,6 +112,7 @@ void PE::calculate(){
       mul_left = 0;
     }
   }
+  // printf("PE id = %d, progressing\n", id);
 }
 
 void PE::wakeup(){
@@ -133,18 +157,22 @@ bool PE::finished(){
 }
 
 void PE::report(){
-  printf("PE id = %d, steal_cnt = %d, idel_cnt = %d\n", id, steal_cnt, idel_cnt);
-  // printf("//////task_sum = %d, steal_policy = %d\n", task_sum, steal_policy);
+  printf("PE id = %d, mul_num = %d, task_overall = %d, steal_cnt = %d, idel_cnt = %d\n", id, mul_num, task_overall, steal_cnt, idel_cnt);
+  printf("====task_cnt = %d, average task_length = %f, average_idel = %f(clk %f%%), steal_policy = %d\n", task_cnt, (float)task_overall/task_cnt, (float)idel_cnt/task_cnt, (float)idel_cnt/clk*100, steal_policy);
 }
 
 void PE::static_init(PE* h, int pe_num){
   head = h;
   PE_num = pe_num;
   waiting_cnt = 0;
+  PE_task_overall = 0;
   // steal_policy = POLICY_NO_STEAL;
   // sync_policy = SYNC_POLICY_LINE;
 }
 
+int PE::overall_task(){
+  return PE_task_overall;
+}
 void PE::error(string msg){
   printf("PE Error: %s\n", msg.c_str());
   exit(1);
