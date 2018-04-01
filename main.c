@@ -18,8 +18,10 @@ float mat_sparsity = 0.9;
 
 int* PE_scale;
 int multiplier_num = 64;
+static int normalize_mul_num = 128;
 
 int clk = 0;
+int** sparse_task_mat;
 vector<int> task;
 int* mat_row_nnz;
 int mat_nnz;
@@ -104,6 +106,30 @@ void SparsityMatrixGenerate(int*& row_nnz, int row, int col, float sparsity)
   // printf("range = %d, cnt = %d\n", range, cnt);
 }
 
+void rand_pick_k_nums_from_n(int*& array, int k, int n)
+{
+  // int task_num = vec_row_nnz[id];
+  int* flag = new int[n];
+  for(int i = 0; i < n; ++i){
+    flag[i] = i;
+  }
+  // printf("over0\n");
+  srand((unsigned)time(0));
+  for(int i = 0; i < k; ++i){
+    // printf("i = %d\n", i);
+    int r = (rand() % (n - i)) + i;
+    int tmp = flag[r];
+    flag[r] = flag[i];
+    flag[i] = tmp;
+  }
+  // printf("over1\n");
+  // task.clear();
+  for(int i = 0; i < k; ++i){
+    array[i] = flag[i];
+  }
+  delete [] flag;
+}
+
 void GetInput()
 {
   int nnz = 0;
@@ -125,6 +151,17 @@ void GetInput()
   mat_nnz = nnz;
   mat_sparsity = 1 - nnz / (float)(mat_row_num*mat_col_num);
   printf("successfully read the input\n");
+
+  sparse_task_mat = new int*[vec_row_num];
+  srand(time(0));
+  for(int i = 0; i < vec_row_num; ++i){
+    sparse_task_mat[i] = new int[vec_row_nnz[i]];
+    rand_pick_k_nums_from_n(sparse_task_mat[i], vec_row_nnz[i], vec_full_length);
+    for(int j = 0; j < vec_row_nnz[i]; ++j){
+      int idx = sparse_task_mat[i][j];
+      sparse_task_mat[i][j] = mat_row_nnz[idx];
+    }
+  }
 }
 
 void GenerateInput(float A_sparsity, float B_sparsity)
@@ -148,25 +185,26 @@ void GenerateInput(float A_sparsity, float B_sparsity)
 void InitTask(int id)
 {
   int task_num = vec_row_nnz[id];
-  int* flag = new int[vec_full_length];
-  for(int i = 0; i < vec_full_length; ++i){
-    flag[i] = i;
-  }
-  // printf("over0\n");
-  srand((unsigned)time(0));
-  for(int i = 0; i < task_num; ++i){
-    // printf("i = %d\n", i);
-    int r = (rand() % (vec_full_length - i)) + i;
-    int tmp = flag[r];
-    flag[r] = flag[i];
-    flag[i] = tmp;
-  }
+  // int* flag = new int[vec_full_length];
+  // for(int i = 0; i < vec_full_length; ++i){
+  //   flag[i] = i;
+  // }
+  // // printf("over0\n");
+  // srand((unsigned)time(0));
+  // for(int i = 0; i < task_num; ++i){
+  //   // printf("i = %d\n", i);
+  //   int r = (rand() % (vec_full_length - i)) + i;
+  //   int tmp = flag[r];
+  //   flag[r] = flag[i];
+  //   flag[i] = tmp;
+  // }
   // printf("over1\n");
   task.clear();
   for(int i = 0; i < task_num; ++i){
-    task.push_back(mat_row_nnz[flag[i]]);
+    task.push_back(sparse_task_mat[id][i]);
+    // task.push_back(mat_row_nnz[flag[i]]);
   }
-  delete [] flag;
+  // delete [] flag;
   // printf("over2\n");
 }
 
@@ -174,6 +212,7 @@ void InitTask(int id)
 #define DIS_AVERAGE   1
 #define DIS_GROUP     2
 int dis_policy = DIS_AVERAGE;
+int group_num = 4;
 void Distribute()
 {
   int task_num = task.size();
@@ -212,9 +251,10 @@ void Distribute()
       while(cnt < task_num){
         p = 0;
         while(p < PE_num){
-          for(int i = 0; i < PE_num/4; ++i){
-            int buffer[4]; int length = 0;
-            int mark = cnt + 4;
+          for(int i = 0; i < PE_num/group_num; ++i){
+            int* buffer = new int[group_num];
+            int length = 0;
+            int mark = cnt + group_num;
             for(int tail = cnt; tail < mark && tail < task_num; ++tail, ++length, ++cnt){
               buffer[length] = task[cnt];
               // printf("in, length = %d\n", length);
@@ -225,6 +265,7 @@ void Distribute()
               PE_list[p].addTask(buffer[j]);
               ++p;
             }
+            delete [] buffer;
             if(cnt >= task_num) break;
           }
           if(cnt >= task_num) break;
@@ -284,74 +325,161 @@ void Run()
     cnt_clk += clk;
     clk = 0;
   }
-  printf("clock = %d\n, B_dense clock = %d(speedup = %f), A&N_dense clock = %d(speedup = %f)\n", cnt_clk,
-         vec_nnz*mat_col_num/multiplier_num, (float)vec_nnz*mat_col_num/multiplier_num/cnt_clk,
-         vec_row_num*mat_row_num*mat_col_num/multiplier_num, (float)vec_row_num*mat_row_num*mat_col_num/multiplier_num/cnt_clk);
-  printf("PE_task_overall = %d, optimal clock = %d(speedup = %f)\n", PE::overall_task(), PE::overall_task()/multiplier_num, (float)PE::overall_task()/multiplier_num/cnt_clk);
+  printf("norm_clock = %d\n, B_dense norm_clock = %d(speedup = %f), A&N_dense norm_clock = %d(speedup = %f)\n", cnt_clk*multiplier_num/normalize_mul_num,
+         vec_nnz*mat_col_num/normalize_mul_num, (float)vec_nnz*mat_col_num/multiplier_num/cnt_clk,
+         vec_row_num*mat_row_num*mat_col_num/normalize_mul_num, (float)vec_row_num*mat_row_num*mat_col_num/multiplier_num/cnt_clk);
+  printf("PE_task_overall = %d, optimal clock = %d(speedup = %f)\n", PE::overall_task(), PE::overall_task()/normalize_mul_num, (float)PE::overall_task()/multiplier_num/cnt_clk);
   for(int i = 0; i < PE_num; ++i){
     PE_list[i].report();
     PE_list[i].cleanup();
   }
+
+  float idel_rate = (float)PE::overall_idel_clk() / (cnt_clk*PE_num);
+  fprintf(stderr, "\"%d\",\"%.3f\"\n", cnt_clk, idel_rate);
 }
 
 void SettingReport(string msg)
 {
   printf("\n\n%s, multiplier_num = %d, A_sparsity = %f, B_sparsity = %f\n", msg.c_str(), multiplier_num, vec_sparsity, mat_sparsity);
+
+  fprintf(stderr, "\"%d\",\"%s\",\"%d\",\"%.3f\",\"%.3f\",", group_num, msg.c_str(), multiplier_num, vec_sparsity, mat_sparsity);
 }
 
 int main()
 {
   GetInput();
   InitSettings();
+
+
   PE_num = 16;
-  multiplier_num = 60;
-  int scale_schedule[16] = {1, 2, 4, 8, 1, 2, 4, 8, 1, 2, 4, 8, 1, 2, 4, 8};
-  InitSettings(scale_schedule);
-  PE::sync_policy = SYNC_POLICY_ELEMENT;
-  dis_policy = DIS_GROUP;
-  PE::steal_policy = POLICY_NO_STEAL;
-  // printf("\nschedule4, mode 1:2:4:8, mulitplier_num = %d, A_sparsity = %f, B_sparsity = %f", multiplier_num, vec_sparsity, mat_sparsity);
-  SettingReport("schedule4, mode 1:2:4:8");
-  Run();
+  group_num = 4;
 
-  multiplier_num = 60;
-  int scale_schedule2[16] = {2, 3, 4, 6, 2, 3, 4, 6, 2, 3, 4, 6, 2, 3, 4, 6};
-  InitSettings(scale_schedule2);
+  // multiplier_num = 128;
+  // int scale_schedule4_1[16] = {1, 2, 4, 8, 1, 2, 4, 8, 1, 2, 4, 8, 1, 2, 4, 8};
+  // InitSettings(scale_schedule4_1);
   PE::sync_policy = SYNC_POLICY_ELEMENT;
-  dis_policy = DIS_GROUP;
+  // dis_policy = DIS_GROUP;
   PE::steal_policy = POLICY_NO_STEAL;
-  // printf("\nschedule4, mode2:3:4:6, multiplier_num = %d, A_sparsity = %f, B_sparsity = %f", vec_sparsity, mat_sparsity);
-  SettingReport("schedule4, mode 2:3:4:6");
-  Run();
+  // SettingReport("1:2:4:8");
+  // Run();
 
-  multiplier_num = 60;
-  int scale_schedule3[16] = {1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4};
-  InitSettings(scale_schedule3);
-  PE::sync_policy = SYNC_POLICY_ELEMENT;
-  dis_policy = DIS_GROUP;
-  PE::steal_policy = POLICY_NO_STEAL;
-  // printf("\nschedule3 mode, A_sparsity = %f, B_sparsity = %f", vec_sparsity, mat_sparsity);
-  SettingReport("schedule4, mode 1:2:3:4");
-  Run();
-
-  multiplier_num = 68;
-  int scale_schedule4[16] = {7, 8, 9, 10, 7, 8, 9, 10, 7, 8, 9, 10, 7, 8, 9, 10};
-  InitSettings(scale_schedule4);
-  PE::sync_policy = SYNC_POLICY_ELEMENT;
-  dis_policy = DIS_GROUP;
-  PE::steal_policy = POLICY_NO_STEAL;
-  // printf("\nschedule3 mode, A_sparsity = %f, B_sparsity = %f", vec_sparsity, mat_sparsity);
-  SettingReport("schedule4, mode 7:8:9:10");
-  Run();
-
-  multiplier_num = 64;
-  int scale_naive[16] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
-  InitSettings(scale_naive);
+  multiplier_num = 128;
+  int scale_naive4[16] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
+  InitSettings(scale_naive4);
   dis_policy = DIS_AVERAGE;
   // PE::steal_policy = POLICY_DO_STEAL;
-  // printf("\nnaive mode, A_sparsity = %f, B_sparsity = %f", vec_sparsity, mat_sparsity);
-  SettingReport("naive scheduce, mode 1:1:!:1");
+  SettingReport("1:1:1:1");
   Run();
+
+  multiplier_num = 128;
+  int scale_schedule4_3[16] = {1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4};
+  InitSettings(scale_schedule4_3);
+  PE::sync_policy = SYNC_POLICY_ELEMENT;
+  dis_policy = DIS_GROUP;
+  PE::steal_policy = POLICY_NO_STEAL;
+  SettingReport("1:2:3:4");
+  Run();
+
+  multiplier_num = 128;
+  int scale_schedule4_2[16] = {2, 3, 4, 6, 2, 3, 4, 6, 2, 3, 4, 6, 2, 3, 4, 6};
+  InitSettings(scale_schedule4_2);
+  PE::sync_policy = SYNC_POLICY_ELEMENT;
+  dis_policy = DIS_GROUP;
+  PE::steal_policy = POLICY_NO_STEAL;
+  SettingReport("2:3:4:6");
+  Run();
+
+  multiplier_num = 128;
+  int scale_schedule4_4[16] = {3, 4, 4, 5, 3, 4, 4, 5, 3, 4, 4, 5, 3, 4, 4, 5};
+  InitSettings(scale_schedule4_4);
+  PE::sync_policy = SYNC_POLICY_ELEMENT;
+  dis_policy = DIS_GROUP;
+  PE::steal_policy = POLICY_NO_STEAL;
+  SettingReport("3:4:4:5");
+  Run();
+
+
+
+  PE_num = 8;
+  group_num = 2;
+  PE::steal_policy = POLICY_NO_STEAL;
+  PE::sync_policy = SYNC_POLICY_ELEMENT;
+
+  multiplier_num = 128;
+  int scale_naive2[8] = {1, 1, 1, 1, 1, 1, 1, 1};
+  InitSettings(scale_naive2);
+  dis_policy = DIS_AVERAGE;
+  SettingReport("1:1");
+  Run();
+
+  multiplier_num = 128;
+  int scale_schedule2_1[8] = {1, 2, 1, 2, 1, 2, 1, 2};
+  InitSettings(scale_schedule2_1);
+  // PE::sync_policy = SYNC_POLICY_ELEMENT;
+  dis_policy = DIS_GROUP;
+  // PE::steal_policy = POLICY_NO_STEAL;
+  SettingReport("1:2");
+  Run();
+
+  multiplier_num = 128;
+  int scale_schedule2_2[8] = {3, 4, 3, 4, 3, 4, 3, 4};
+  InitSettings(scale_schedule2_2);
+  // PE::sync_policy = SYNC_POLICY_ELEMENT;
+  dis_policy = DIS_GROUP;
+  // PE::steal_policy = POLICY_NO_STEAL;
+  SettingReport("3:4");
+  Run();
+
+  multiplier_num = 128;
+  int scale_schedule2_3[8] = {5, 6, 5, 6, 5, 6, 5, 6};
+  InitSettings(scale_schedule2_3);
+  // PE::sync_policy = SYNC_POLICY_ELEMENT;
+  dis_policy = DIS_GROUP;
+  // PE::steal_policy = POLICY_NO_STEAL;
+  SettingReport("5:6");
+  Run();
+
+
+  PE_num = 32;
+  group_num = 8;
+  PE::steal_policy = POLICY_NO_STEAL;
+  PE::sync_policy = SYNC_POLICY_ELEMENT;
+
+  multiplier_num = 128;
+  int scale_naive8[32] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
+  InitSettings(scale_naive8);
+  dis_policy = DIS_AVERAGE;
+  SettingReport("1:1:1:1:1:1:1:1");
+  Run();
+
+  multiplier_num = 128;
+  int scale_schedule8_1[32] = {1, 1, 2, 2, 3, 3, 4, 4, 1, 1, 2, 2, 3, 3, 4, 4, 1, 1, 2, 2, 3, 3, 4, 4, 1, 1, 2, 2, 3, 3, 4, 4};
+  InitSettings(scale_schedule8_1);
+  // PE::sync_policy = SYNC_POLICY_ELEMENT;
+  dis_policy = DIS_GROUP;
+  // PE::steal_policy = POLICY_NO_STEAL;
+  SettingReport("1:1:2:2:3:3:4:4");
+  Run();
+
+  multiplier_num = 128;
+  int scale_schedule8_2[32] = {2, 2, 3, 3, 4, 4, 6, 6, 2, 2, 3, 3, 4, 4, 6, 6, 2, 2, 3, 3, 4, 4, 6, 6, 2, 2, 3, 3, 4, 4, 6, 6};
+  InitSettings(scale_schedule8_2);
+  // PE::sync_policy = SYNC_POLICY_ELEMENT;
+  dis_policy = DIS_GROUP;
+  // PE::steal_policy = POLICY_NO_STEAL;
+  SettingReport("2:2:3:3:4:4:6:6");
+  Run();
+
+  multiplier_num = 128;
+  int scale_schedule8_3[32] = {3, 3, 4, 4, 4, 4, 5, 5, 3, 3, 4, 4, 4, 4, 5, 5, 3, 3, 4, 4, 4, 4, 5, 5, 3, 3, 4, 4, 4, 4, 5, 5};
+  InitSettings(scale_schedule8_3);
+  // PE::sync_policy = SYNC_POLICY_ELEMENT;
+  dis_policy = DIS_GROUP;
+  // PE::steal_policy = POLICY_NO_STEAL;
+  SettingReport("3:3:4:4:4:4:5:5");
+  Run();
+
+
   // for(float a = 0.4; a < 0.71; a += 0.1){
   //   for(float b = 0.6; b < 0.91; b += 0.1){
   //     GenerateInput(a, b);

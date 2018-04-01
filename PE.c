@@ -6,6 +6,8 @@ int PE::waiting_cnt = 0;
 int PE::PE_num = 0;
 PE* PE::head = NULL;
 int PE::PE_task_overall = 0;
+int PE::PE_idel_cnt = 0;
+
 PE::PE(){
   task.clear();
   neighbor.clear();
@@ -64,16 +66,19 @@ void PE::calculate(){
   if(halt_cnt > 0){
     --halt_cnt;
     ++idel_cnt;
+    ++PE_idel_cnt;
     return;
   }
   if(sync_policy == SYNC_POLICY_ELEMENT){
     if(sync_waiting){
       ++idel_cnt;
+      ++PE_idel_cnt;
       return;
     }
   }
   if(task_sum == 0){
     ++idel_cnt;
+    ++PE_idel_cnt;
     if(sync_policy == SYNC_POLICY_ELEMENT && sync_waiting == false){
       ++waiting_cnt;
       sync_waiting = true;
@@ -166,6 +171,7 @@ void PE::static_init(PE* h, int pe_num){
   PE_num = pe_num;
   waiting_cnt = 0;
   PE_task_overall = 0;
+  PE_idel_cnt = 0;
   // steal_policy = POLICY_NO_STEAL;
   // sync_policy = SYNC_POLICY_LINE;
 }
@@ -173,6 +179,11 @@ void PE::static_init(PE* h, int pe_num){
 int PE::overall_task(){
   return PE_task_overall;
 }
+
+int PE::overall_idel_clk(){
+  return PE_idel_cnt;
+}
+
 void PE::error(string msg){
   printf("PE Error: %s\n", msg.c_str());
   exit(1);

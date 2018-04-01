@@ -29,6 +29,7 @@ public:
   void report();
   static void static_init(PE* h, int pe_num);
   static int overall_task();
+  static int overall_idel_clk();
   static int steal_policy;
   static int sync_policy;
 
@@ -51,6 +52,7 @@ private:
   static int PE_num;
   static int waiting_cnt;
   static int PE_task_overall;
+  static int PE_idel_cnt;
 
   static void error(string msg);
 };
